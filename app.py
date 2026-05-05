@@ -1,0 +1,385 @@
+import os
+from io import BytesIO
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+from PIL import Image
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils import get_column_letter
+
+st.set_page_config(page_title="Quản lý hàng hóa", page_icon="📦", layout="wide")
+
+CREDENTIALS = {
+    "purchasing": {"password": "1", "role": "PURCHASING"},
+    "sale": {"password": "1", "role": "SALE"},
+}
+
+DATA_DIR = Path("data")
+IMG_DIR = Path("images")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+IMG_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "database.csv"
+DEFAULT_COLUMNS = ["Tên hàng", "Code", "Phân loại", "CBM", "Packing", "Giá", "Ảnh"]
+if not DB_PATH.exists():
+    pd.DataFrame(columns=DEFAULT_COLUMNS).to_csv(DB_PATH, index=False)
+
+
+def load_data():
+    df = pd.read_csv(DB_PATH)
+    for col in DEFAULT_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[DEFAULT_COLUMNS]
+
+
+def save_data(df):
+    df.to_csv(DB_PATH, index=False)
+
+
+def categories_list():
+    df = load_data()
+    categories = [c for c in df["Phân loại"].dropna().astype(str).unique() if c.strip()]
+    defaults = ["Nước uống", "Bún khô", "Gia vị", "Đồ hộp", "Khác"]
+    for item in defaults:
+        if item not in categories:
+            categories.insert(0, item)
+    return categories
+
+
+def save_product(name, code, category, cbm, packing, price, image_file):
+    df = load_data()
+    code = str(code).strip()
+    if code in df["Code"].astype(str).values:
+        st.warning("Mã Code đã tồn tại. Vui lòng dùng mã khác hoặc cập nhật bản ghi hiện tại.")
+        return False
+
+    try:
+        image = Image.open(image_file)
+        image = image.convert("RGB")
+    except Exception:
+        st.error("Không thể đọc ảnh. Vui lòng thử lại với ảnh hợp lệ.")
+        return False
+
+    image_path = IMG_DIR / f"{code}.jpg"
+    image.save(image_path, format="JPEG", quality=90)
+
+    new_row = {
+        "Tên hàng": name.strip(),
+        "Code": code,
+        "Phân loại": category.strip(),
+        "CBM": cbm.strip(),
+        "Packing": packing.strip(),
+        "Giá": price.strip(),
+        "Ảnh": str(image_path)
+    }
+
+    pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(DB_PATH, index=False)
+    return True
+
+
+def update_product(code, name, category, cbm, packing, price, image_file=None):
+    df = load_data()
+    index = df.index[df["Code"].astype(str) == code].tolist()
+    if not index:
+        st.error("Không tìm thấy hàng hóa để cập nhật.")
+        return False
+
+    idx = index[0]
+    df.at[idx, "Tên hàng"] = name.strip()
+    df.at[idx, "Phân loại"] = category.strip()
+    df.at[idx, "CBM"] = cbm.strip()
+    df.at[idx, "Packing"] = packing.strip()
+    df.at[idx, "Giá"] = price.strip()
+
+    if image_file is not None:
+        try:
+            image = Image.open(image_file)
+            image = image.convert("RGB")
+            image_path = IMG_DIR / f"{code}.jpg"
+            image.save(image_path, format="JPEG", quality=90)
+            df.at[idx, "Ảnh"] = str(image_path)
+        except Exception:
+            st.error("Không thể cập nhật ảnh. Vui lòng thử lại với ảnh hợp lệ.")
+            return False
+
+    save_data(df)
+    return True
+
+
+def delete_product(code):
+    df = load_data()
+    df = df[df["Code"].astype(str) != code].reset_index(drop=True)
+    save_data(df)
+
+
+def authenticate(username, password):
+    user = CREDENTIALS.get(username)
+    if user and user["password"] == password:
+        return user["role"]
+    return None
+
+
+def create_excel(df):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PO"
+
+    headers = list(df.columns)
+    ws.append(headers)
+
+    for row in df.itertuples(index=False):
+        values = []
+        for header, value in zip(headers, row):
+            if header == "Ảnh":
+                values.append(Path(value).name if pd.notna(value) and value else "")
+            else:
+                values.append(value)
+        ws.append(values)
+
+    for col_idx, header in enumerate(headers, start=1):
+        width = 30 if header == "Ảnh" else 18
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    image_col = headers.index("Ảnh") + 1
+    for row_idx, image_path in enumerate(df["Ảnh"], start=2):
+        if pd.notna(image_path) and str(image_path).strip():
+            image_file = Path(image_path)
+            if image_file.exists():
+                try:
+                    img = XLImage(str(image_file))
+                    img.width = 120
+                    img.height = 120
+                    img.anchor = f"{get_column_letter(image_col)}{row_idx}"
+                    ws.add_image(img)
+                    ws.row_dimensions[row_idx].height = 90
+                except Exception:
+                    continue
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+    st.session_state["username"] = ""
+    st.session_state["role"] = ""
+    st.session_state["edit_code"] = ""
+
+if "login_error" not in st.session_state:
+    st.session_state["login_error"] = ""
+
+st.markdown(
+    """
+    <style>
+        .css-18e3th9 {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+        .stButton>button {
+            background-color: #0066CC;
+            color: white;
+            border-radius: 10px;
+        }
+        .stButton>button:hover {
+            background-color: #0052A3;
+            color: white;
+        }
+        .stTextInput>div>div>input,
+        .stSelectbox>div>div>div>select,
+        .stTextArea>div>div>textarea {
+            border-radius: 10px;
+            border: 1px solid #d3d3d3;
+            padding: 0.8rem;
+        }
+        .stFileUploader>div>div {
+            border: 1px dashed #d3d3d3;
+            border-radius: 10px;
+            padding: 1rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+if not st.session_state["logged_in"]:
+    st.title("🔐 Đăng nhập")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Đăng nhập")
+        if submitted:
+            role = authenticate(username, password)
+            if role:
+                st.session_state["logged_in"] = True
+                st.session_state["username"] = username
+                st.session_state["role"] = role
+                st.session_state["login_error"] = ""
+                st.experimental_rerun()
+            else:
+                st.session_state["login_error"] = "Tên đăng nhập hoặc mật khẩu không đúng."
+    if st.session_state["login_error"]:
+        st.error(st.session_state["login_error"])
+    st.stop()
+
+is_purchasing = st.session_state["role"] == "PURCHASING"
+
+header_col, logout_col = st.columns([3, 1])
+with header_col:
+    st.title("📦 Quản lý hàng hóa")
+    st.markdown(f"**Vai trò:** `{st.session_state['role']}` — **{st.session_state['username']}**")
+with logout_col:
+    if st.button("Đăng xuất"):
+        st.session_state["logged_in"] = False
+        st.session_state["username"] = ""
+        st.session_state["role"] = ""
+        st.session_state["edit_code"] = ""
+        st.experimental_rerun()
+
+tabs = st.tabs(["Nhập hàng", "Danh sách hàng"] if is_purchasing else ["Danh sách hàng"])
+
+if is_purchasing:
+    with tabs[0]:
+        st.subheader("Nhập thông tin hàng hóa")
+        categories = categories_list()
+        with st.form("form_add_product"):
+            col1, col2 = st.columns(2)
+            name = col1.text_input("Tên hàng")
+            code = col2.text_input("Code")
+            category = col1.selectbox("Phân loại", options=categories + ["Nhập mới..."])
+            if category == "Nhập mới...":
+                category = col2.text_input("Phân loại mới")
+            cbm = col1.text_input("CBM")
+            packing = col2.text_input("Packing")
+            price = col1.text_input("Giá")
+            image_file = col2.file_uploader("Upload ảnh", type=["jpg", "jpeg", "png", "webp"])
+
+            if image_file is not None:
+                col1.image(image_file, caption="Ảnh đã chọn", width=300)
+
+            submit = st.form_submit_button("Lưu hàng")
+            if submit:
+                if not all([name.strip(), code.strip(), category.strip(), cbm.strip(), packing.strip(), price.strip(), image_file]):
+                    st.error("Vui lòng nhập đầy đủ thông tin và chọn ảnh.")
+                else:
+                    if save_product(name, code, category, cbm, packing, price, image_file):
+                        st.success(f"Đã lưu hàng hóa '{name}' và ảnh đã được lưu với tên {code}.jpg.")
+
+    list_tab = tabs[1]
+else:
+    list_tab = tabs[0]
+
+with list_tab:
+    st.subheader("Danh sách hàng hóa")
+    df = load_data()
+    if df.empty:
+        st.info("Chưa có mặt hàng nào. Vui lòng thêm hàng hóa nếu bạn là Thu mua.")
+    else:
+        selected_rows = []
+        if is_purchasing:
+            edit_code = st.session_state.get("edit_code", "")
+            if edit_code:
+                edit_df = df[df["Code"].astype(str) == edit_code]
+                if not edit_df.empty:
+                    row = edit_df.iloc[0]
+                    st.markdown("---")
+                    st.markdown(f"### Chỉnh sửa hàng hóa: {row['Tên hàng']} ({row['Code']})")
+                    with st.form("edit_form"):
+                        col1, col2 = st.columns(2)
+                        edit_name = col1.text_input("Tên hàng", value=row["Tên hàng"])
+                        edit_category = col2.selectbox(
+                            "Phân loại",
+                            options=categories_list() + ["Nhập mới..."],
+                            index=0 if row["Phân loại"] in categories_list() else len(categories_list()),
+                        )
+                        if edit_category == "Nhập mới...":
+                            edit_category = col1.text_input("Phân loại mới", value=row["Phân loại"])
+                        edit_cbm = col1.text_input("CBM", value=row["CBM"])
+                        edit_packing = col2.text_input("Packing", value=row["Packing"])
+                        edit_price = col1.text_input("Giá", value=row["Giá"])
+                        edit_image = col2.file_uploader("Cập nhật ảnh (không bắt buộc)", type=["jpg", "jpeg", "png", "webp"])
+                        save_edit = st.form_submit_button("Cập nhật")
+                        cancel_edit = st.form_submit_button("Hủy")
+                        if save_edit:
+                            if update_product(edit_code, edit_name, edit_category, edit_cbm, edit_packing, edit_price, edit_image if edit_image else None):
+                                st.success("Cập nhật thành công.")
+                                st.session_state["edit_code"] = ""
+                                st.experimental_rerun()
+                        if cancel_edit:
+                            st.session_state["edit_code"] = ""
+                            st.experimental_rerun()
+                else:
+                    st.session_state["edit_code"] = ""
+
+            st.markdown("**Chọn các mặt hàng để tạo PO**")
+            header_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
+            header_cols[0].write("")
+            header_cols[1].markdown("**Tên hàng**")
+            header_cols[2].markdown("**Code**")
+            header_cols[3].markdown("**Phân loại**")
+            header_cols[4].markdown("**CBM**")
+            header_cols[5].markdown("**Packing**")
+            header_cols[6].markdown("**Giá**")
+            header_cols[7].markdown("**Hành động**")
+
+            for _, row in df.iterrows():
+                row_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
+                selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
+                row_cols[1].write(row["Tên hàng"])
+                row_cols[2].write(row["Code"])
+                row_cols[3].write(row["Phân loại"])
+                row_cols[4].write(row["CBM"])
+                row_cols[5].write(row["Packing"])
+                row_cols[6].write(row["Giá"])
+                action_col = row_cols[7]
+                if action_col.button("Sửa", key=f"edit_{row['Code']}"):
+                    st.session_state["edit_code"] = str(row["Code"])
+                    st.experimental_rerun()
+                if action_col.button("Xóa", key=f"delete_{row['Code']}"):
+                    delete_product(str(row["Code"]))
+                    st.success("Đã xóa hàng hóa.")
+                    st.experimental_rerun()
+                if selected:
+                    selected_rows.append(row)
+        else:
+            st.markdown("**Danh sách hàng hóa dành cho Sale**")
+            cards = []
+            for i in range(0, len(df), 2):
+                cols = st.columns(2)
+                for j in range(2):
+                    if i + j >= len(df):
+                        continue
+                    row = df.iloc[i + j]
+                    with cols[j]:
+                        st.markdown("---")
+                        image_path = Path(str(row["Ảnh"]))
+                        if image_path.exists():
+                            st.image(str(image_path), width=250)
+                        else:
+                            st.write("_Không có ảnh_")
+                        st.markdown(f"**Tên hàng:** {row['Tên hàng']}")
+                        st.markdown(f"**Code:** {row['Code']}")
+                        st.markdown(f"**Phân loại:** {row['Phân loại']}")
+                        st.markdown(f"**CBM:** {row['CBM']}")
+                        st.markdown(f"**Packing:** {row['Packing']}")
+                        st.markdown(f"**Giá:** {row['Giá']}")
+                        selected = st.checkbox("Chọn", key=f"select_{row['Code']}")
+                        if selected:
+                            selected_rows.append(row)
+
+        if st.button("Xuất Excel"):
+            if not selected_rows:
+                st.warning("Vui lòng chọn ít nhất một mặt hàng trước khi xuất Excel.")
+            else:
+                result_df = pd.DataFrame(selected_rows)
+                buffer = create_excel(result_df)
+                file_name = f"PO_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                st.download_button(
+                    label="Tải file Excel",
+                    data=buffer,
+                    file_name=file_name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
