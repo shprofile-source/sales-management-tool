@@ -10,6 +10,13 @@ from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils import get_column_letter
 
 try:
+    import cloudinary
+    import cloudinary.uploader
+    CLOUDINARY_AVAILABLE = True
+except ImportError:
+    CLOUDINARY_AVAILABLE = False
+
+try:
     import gspread
     from google.oauth2.service_account import Credentials
     GSPREAD_AVAILABLE = True
@@ -75,6 +82,13 @@ else:
     else:
         sheet_status_message = "⚠️ Google Sheets không khả dụng. Sử dụng CSV local."
 
+if CLOUDINARY_AVAILABLE and "cloudinary" in st.secrets:
+    cloudinary.config(
+        cloud_name=st.secrets["cloudinary"].get("cloud_name"),
+        api_key=st.secrets["cloudinary"].get("api_key"),
+        api_secret=st.secrets["cloudinary"].get("api_secret")
+    )
+
 
 def load_data():
     if USE_GOOGLE_SHEETS and worksheet is not None:
@@ -121,6 +135,23 @@ def save_data(df):
             return False, f"❌ Lỗi khi lưu CSV local: {e}"
 
 
+def upload_to_cloudinary(image_file, code):
+    """Upload image to Cloudinary and return secure_url."""
+    if not CLOUDINARY_AVAILABLE or "cloudinary" not in st.secrets:
+        return None
+    try:
+        result = cloudinary.uploader.upload(
+            image_file,
+            public_id=f"khai_nam_{code}",
+            overwrite=True,
+            resource_type="auto"
+        )
+        return result.get("secure_url")
+    except Exception as e:
+        st.error(f"❌ Lỗi upload ảnh lên Cloudinary: {e}")
+        return None
+
+
 def categories_list():
     df = load_data()
     categories = [c for c in df["Phân loại"].dropna().astype(str).unique() if c.strip()]
@@ -143,8 +174,9 @@ def save_product(name, code, category, cbm, packing, price, image_file):
     except Exception:
         return False, "Không thể đọc ảnh. Vui lòng thử lại với ảnh hợp lệ."
 
-    image_path = IMG_DIR / f"{code}.jpg"
-    image.save(image_path, format="JPEG", quality=90)
+    image_url = upload_to_cloudinary(image_file, code)
+    if not image_url:
+        image_url = ""
 
     new_row = {
         "Tên hàng": name.strip(),
@@ -153,7 +185,7 @@ def save_product(name, code, category, cbm, packing, price, image_file):
         "CBM": cbm.strip(),
         "Packing": packing.strip(),
         "Giá": price.strip(),
-        "Ảnh": str(image_path),
+        "Ảnh": image_url,
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     return save_data(df)
@@ -176,9 +208,9 @@ def update_product(code, name, category, cbm, packing, price, image_file=None):
         try:
             image = Image.open(image_file)
             image = image.convert("RGB")
-            image_path = IMG_DIR / f"{code}.jpg"
-            image.save(image_path, format="JPEG", quality=90)
-            df.at[idx, "Ảnh"] = str(image_path)
+            image_url = upload_to_cloudinary(image_file, code)
+            if image_url:
+                df.at[idx, "Ảnh"] = image_url
         except Exception:
             return False, "Không thể cập nhật ảnh. Vui lòng thử lại với ảnh hợp lệ."
 
@@ -210,7 +242,12 @@ def create_excel(df):
         values = []
         for header, value in zip(headers, row):
             if header == "Ảnh":
-                values.append(Path(value).name if pd.notna(value) and value else "")
+                if pd.notna(value) and str(value).startswith("http"):
+                    values.append(str(value))
+                elif pd.notna(value) and value:
+                    values.append(Path(value).name)
+                else:
+                    values.append("")
             else:
                 values.append(value)
         ws.append(values)
@@ -222,17 +259,18 @@ def create_excel(df):
     image_col = headers.index("Ảnh") + 1
     for row_idx, image_path in enumerate(df["Ảnh"], start=2):
         if pd.notna(image_path) and str(image_path).strip():
-            image_file = Path(image_path)
-            if image_file.exists():
-                try:
-                    img = XLImage(str(image_file))
-                    img.width = 120
-                    img.height = 120
-                    img.anchor = f"{get_column_letter(image_col)}{row_idx}"
-                    ws.add_image(img)
-                    ws.row_dimensions[row_idx].height = 90
-                except Exception:
-                    continue
+            if not str(image_path).startswith("http"):
+                image_file = Path(image_path)
+                if image_file.exists():
+                    try:
+                        img = XLImage(str(image_file))
+                        img.width = 120
+                        img.height = 120
+                        img.anchor = f"{get_column_letter(image_col)}{row_idx}"
+                        ws.add_image(img)
+                        ws.row_dimensions[row_idx].height = 90
+                    except Exception:
+                        continue
 
     buffer = BytesIO()
     wb.save(buffer)
@@ -245,6 +283,8 @@ if "logged_in" not in st.session_state:
     st.session_state["username"] = ""
     st.session_state["role"] = ""
     st.session_state["edit_code"] = ""
+    st.session_state["current_page_purchasing"] = 0
+    st.session_state["current_page_sale"] = 0
 
 if "login_error" not in st.session_state:
     st.session_state["login_error"] = ""
@@ -501,6 +541,16 @@ with list_tab:
 
             st.markdown("---")
             st.markdown("#### 🛒 Chọn các mặt hàng để tạo PO")
+            
+            items_per_page = 20
+            total_pages = (len(df) + items_per_page - 1) // items_per_page if len(df) > 0 else 1
+            if st.session_state["current_page_purchasing"] >= total_pages:
+                st.session_state["current_page_purchasing"] = total_pages - 1
+            
+            start_idx = st.session_state["current_page_purchasing"] * items_per_page
+            end_idx = start_idx + items_per_page
+            df_page = df.iloc[start_idx:end_idx]
+            
             header_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
             header_cols[0].write("")
             header_cols[1].markdown("**📦 Tên hàng**")
@@ -511,7 +561,7 @@ with list_tab:
             header_cols[6].markdown("**💰 Giá**")
             header_cols[7].markdown("**⚙️ Hành động**")
 
-            for _, row in df.iterrows():
+            for _, row in df_page.iterrows():
                 row_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
                 selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
                 row_cols[1].write(row["Tên hàng"])
@@ -534,6 +584,18 @@ with list_tab:
                     st.rerun()
                 if selected:
                     selected_rows.append(row)
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                if st.button("⬅️ Trang trước", use_container_width=True, disabled=st.session_state["current_page_purchasing"] == 0):
+                    st.session_state["current_page_purchasing"] -= 1
+                    st.rerun()
+            with col2:
+                st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><b>Trang {st.session_state['current_page_purchasing'] + 1} / {total_pages}</b></div>", unsafe_allow_html=True)
+            with col3:
+                if st.button("Trang sau ➡️", use_container_width=True, disabled=st.session_state["current_page_purchasing"] >= total_pages - 1):
+                    st.session_state["current_page_purchasing"] += 1
+                    st.rerun()
         else:
             st.markdown("#### 💼 Danh sách hàng hóa dành cho Sale")
             categories = categories_list()
@@ -552,6 +614,15 @@ with list_tab:
                 elif filtered_df.empty:
                     st.warning("⚠️ Chưa có sản phẩm trong category đã chọn.")
                 else:
+                    items_per_page = 20
+                    total_pages = (len(filtered_df) + items_per_page - 1) // items_per_page if len(filtered_df) > 0 else 1
+                    if st.session_state["current_page_sale"] >= total_pages:
+                        st.session_state["current_page_sale"] = total_pages - 1
+                    
+                    start_idx = st.session_state["current_page_sale"] * items_per_page
+                    end_idx = start_idx + items_per_page
+                    filtered_df_page = filtered_df.iloc[start_idx:end_idx]
+                    
                     header_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
                     header_cols[0].markdown("**Chọn**")
                     header_cols[1].markdown("**Tên hàng**")
@@ -561,7 +632,7 @@ with list_tab:
                     header_cols[5].markdown("**Packing**")
                     header_cols[6].markdown("**Giá**")
 
-                    for _, row in filtered_df.iterrows():
+                    for _, row in filtered_df_page.iterrows():
                         row_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
                         selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
                         if selected:
@@ -572,6 +643,18 @@ with list_tab:
                         row_cols[4].write(row["CBM"])
                         row_cols[5].write(row["Packing"])
                         row_cols[6].write(row["Giá"])
+                    
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col1:
+                        if st.button("⬅️ Trang trước", use_container_width=True, disabled=st.session_state["current_page_sale"] == 0, key="prev_sale"):
+                            st.session_state["current_page_sale"] -= 1
+                            st.rerun()
+                    with col2:
+                        st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><b>Trang {st.session_state['current_page_sale'] + 1} / {total_pages}</b></div>", unsafe_allow_html=True)
+                    with col3:
+                        if st.button("Trang sau ➡️", use_container_width=True, disabled=st.session_state["current_page_sale"] >= total_pages - 1, key="next_sale"):
+                            st.session_state["current_page_sale"] += 1
+                            st.rerun()
 
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
