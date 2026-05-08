@@ -1,0 +1,67 @@
+# 🚀 Lệnh nhanh - Google Sheets Setup
+
+## Bước 1: Cài gspread
+```bash
+pip install gspread
+```
+
+## Bước 2: Tạo thư mục Streamlit secrets (nếu chưa có)
+```bash
+mkdir -p ~/.streamlit
+```
+
+## Bước 3: Tạo/sửa secrets.toml
+```bash
+nano ~/.streamlit/secrets.toml
+```
+(Paste nội dung JSON + sheet_id, sau đó Ctrl+O, Enter, Ctrl+X để lưu)
+
+## Bước 4: Kiểm tra cấu hình
+```bash
+cd "/Users/sinhhungtruong/sale manager tool"
+python3 test_google_sheets.py
+```
+
+## Bước 5: Chạy app
+```bash
+cd "/Users/sinhhungtruong/sale manager tool"
+streamlit run app_google_sheets.py
+```
+
+---
+
+## 📚 Các tệp hướng dẫn
+
+| File | Mô tả |
+|------|-------|
+| `README_GOOGLE_SHEETS.md` | Tóm tắt và chỉ số |
+| `GOOGLE_SHEETS_QUICKSTART.md` | Hướng dẫn 7 bước chi tiết |
+| `GOOGLE_SHEETS_SETUP.md` | Hướng dẫn kỹ thuật đầy đủ |
+| `secrets_template.toml` | Template cấu hình |
+| `test_google_sheets.py` | Script kiểm tra kết nối |
+| `app_google_sheets.py` | App chính (Google Sheets version) |
+
+---
+
+## 💡 Mẹo
+
+- **Lần đầu tiên?** → Đọc `GOOGLE_SHEETS_QUICKSTART.md`
+- **Gặp lỗi?** → Chạy `python3 test_google_sheets.py` để chẩn đoán
+- **Chi tiết kỹ thuật?** → Xem `GOOGLE_SHEETS_SETUP.md`
+- **Cần template?** → Xem `secrets_template.toml`
+
+---
+
+## ⚡ Tóm tắt nhanh (Các bước chính)
+
+1. `pip install gspread`
+2. Tạo Google Service Account & JSON Key
+3. Copy JSON vào `~/.streamlit/secrets.toml`
+4. Tạo Google Sheet, lấy Sheet ID
+5. Chia sẻ Sheet với Service Account email
+6. Thêm Sheet ID vào `secrets.toml`
+7. Chạy `streamlit run app_google_sheets.py`
+
+---
+
+✅ **Done!** Dữ liệu của bạn giờ sẽ được lưu trên Google Sheets.
