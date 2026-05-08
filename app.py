@@ -536,28 +536,42 @@ with list_tab:
                     selected_rows.append(row)
         else:
             st.markdown("#### 💼 Danh sách hàng hóa dành cho Sale")
-            for i in range(0, len(df), 2):
-                cols = st.columns(2)
-                for j in range(2):
-                    if i + j >= len(df):
-                        continue
-                    row = df.iloc[i + j]
-                    with cols[j]:
-                        st.markdown("---")
-                        image_path = Path(str(row["Ảnh"]))
-                        if image_path.exists():
-                            st.image(str(image_path), width=250)
-                        else:
-                            st.markdown("_📷 Không có ảnh_")
-                        st.markdown(f"**Tên hàng:** {row['Tên hàng']}")
-                        st.markdown(f"**Code:** {row['Code']}")
-                        st.markdown(f"**Phân loại:** {row['Phân loại']}")
-                        st.markdown(f"**CBM:** {row['CBM']}")
-                        st.markdown(f"**Packing:** {row['Packing']}")
-                        st.markdown(f"**Giá:** {row['Giá']}")
-                        selected = st.checkbox("Chọn", key=f"select_{row['Code']}")
+            categories = categories_list()
+            cols = st.columns([1, 5])
+            with cols[0]:
+                st.markdown("**📂 Chọn category**")
+                selected_categories = []
+                for category in categories:
+                    if st.checkbox(category, key=f"category_checkbox_{category}"):
+                        selected_categories.append(category)
+
+            filtered_df = df[df["Phân loại"].isin(selected_categories)] if selected_categories else pd.DataFrame()
+            with cols[1]:
+                if not selected_categories:
+                    st.info("ℹ️ Vui lòng chọn ít nhất một category bên trái để xem sản phẩm.")
+                elif filtered_df.empty:
+                    st.warning("⚠️ Chưa có sản phẩm trong category đã chọn.")
+                else:
+                    header_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
+                    header_cols[0].markdown("**Chọn**")
+                    header_cols[1].markdown("**Tên hàng**")
+                    header_cols[2].markdown("**Code**")
+                    header_cols[3].markdown("**Phân loại**")
+                    header_cols[4].markdown("**CBM**")
+                    header_cols[5].markdown("**Packing**")
+                    header_cols[6].markdown("**Giá**")
+
+                    for _, row in filtered_df.iterrows():
+                        row_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
+                        selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
                         if selected:
                             selected_rows.append(row)
+                        row_cols[1].write(row["Tên hàng"])
+                        row_cols[2].write(row["Code"])
+                        row_cols[3].write(row["Phân loại"])
+                        row_cols[4].write(row["CBM"])
+                        row_cols[5].write(row["Packing"])
+                        row_cols[6].write(row["Giá"])
 
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
