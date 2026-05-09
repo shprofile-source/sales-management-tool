@@ -2,6 +2,7 @@ import os
 from io import BytesIO
 from pathlib import Path
 
+import base64
 import pandas as pd
 import streamlit as st
 from PIL import Image
@@ -278,6 +279,29 @@ def create_excel(df):
     return buffer
 
 
+
+def get_image_html(img_val):
+    if not pd.notna(img_val) or not str(img_val).strip():
+        return "https://via.placeholder.com/300x200?text=No+Image"
+    img_val = str(img_val).strip()
+    if img_val.startswith("http"):
+        return img_val
+    else:
+        path = Path(img_val)
+        if path.exists():
+            try:
+                with open(path, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode()
+                mime = "image/jpeg"
+                if path.suffix.lower() == ".png":
+                    mime = "image/png"
+                elif path.suffix.lower() == ".webp":
+                    mime = "image/webp"
+                return f"data:{mime};base64,{encoded}"
+            except:
+                pass
+        return "https://via.placeholder.com/300x200?text=Not+Found"
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["username"] = ""
@@ -292,97 +316,116 @@ if "login_error" not in st.session_state:
 st.markdown(
     """
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        
         * {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
             margin: 0;
             padding: 0;
         }
 
         .logo-container {
             text-align: center;
-            padding: 2rem 0;
-            background: linear-gradient(135deg, #0066CC 0%, #0052A3 100%);
-            border-radius: 15px;
+            padding: 2.5rem 0;
+            background: linear-gradient(135deg, #4F46E5 0%, #312E81 100%);
+            border-radius: 16px;
             color: white;
             margin-bottom: 2rem;
+            box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.4);
         }
 
         .logo-text {
-            font-size: 48px;
-            font-weight: 900;
+            font-size: 52px;
+            font-weight: 800;
             letter-spacing: 2px;
             margin: 1rem 0 0.5rem 0;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
 
         .logo-tagline {
-            font-size: 16px;
+            font-size: 18px;
             font-style: italic;
-            color: #FFD700;
+            color: #FCD34D;
             font-weight: 600;
         }
 
         .header-info {
-            background-color: #f0f4f8;
-            padding: 1rem 1.5rem;
-            border-radius: 10px;
-            border-left: 4px solid #0066CC;
+            background-color: #F8FAFC;
+            padding: 1.2rem 1.5rem;
+            border-radius: 12px;
+            border-left: 4px solid #4F46E5;
             margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         }
 
         .stButton>button {
-            background-color: #0066CC;
+            background-color: #4F46E5;
             color: white;
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: 600;
             border: none;
-            padding: 0.8rem 1.5rem;
+            padding: 0.6rem 1.2rem;
+            transition: all 0.3s ease;
         }
 
         .stButton>button:hover {
-            background-color: #0052A3;
+            background-color: #4338CA;
             color: white;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+            transform: translateY(-2px);
         }
 
         .stTextInput>div>div>input,
         .stSelectbox>div>div>div>select,
         .stTextArea>div>div>textarea {
-            border-radius: 10px;
-            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            border: 1px solid #CBD5E1;
             padding: 0.8rem;
+            transition: all 0.2s ease;
         }
 
         .stTextInput>div>div>input:focus,
         .stSelectbox>div>div>div>select:focus,
         .stTextArea>div>div>textarea:focus {
-            border: 2px solid #0066CC;
-            box-shadow: 0 0 10px rgba(0, 102, 204, 0.3);
+            border: 2px solid #4F46E5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
         }
 
         .stFileUploader>div>div {
-            border: 2px dashed #0066CC;
-            border-radius: 10px;
-            padding: 1.5rem;
-            background-color: #f9f9f9;
-        }
-
-        .form-box {
-            background-color: #f9f9f9;
-            padding: 1.5rem;
-            border-radius: 15px;
-            border: 1px solid #e0e0e0;
+            border: 2px dashed #818CF8;
+            border-radius: 12px;
+            padding: 2rem;
+            background-color: #EEF2FF;
+            transition: all 0.3s ease;
         }
 
         h1, h2, h3, h4 {
-            color: #0066CC;
+            color: #1E293B;
+            font-weight: 800;
         }
 
         .info-box {
-            background-color: #f0f4f8;
-            padding: 1rem;
-            border-radius: 10px;
-            border-left: 4px solid #FFD700;
-            margin-bottom: 1rem;
+            background-color: #FEF3C7;
+            padding: 1.2rem;
+            border-radius: 12px;
+            border-left: 4px solid #F59E0B;
+            margin-bottom: 1.5rem;
+            color: #92400E;
+            font-weight: 500;
+        }
+        
+        /* Grid Card Hover Effects */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 16px !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+            background-color: white !important;
+            border: 1px solid #E2E8F0 !important;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"]:hover {
+            transform: translateY(-5px) !important;
+            box-shadow: 0 15px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+            border-color: #818CF8 !important;
         }
     </style>
     """,
@@ -539,127 +582,102 @@ with list_tab:
                 else:
                     st.session_state["edit_code"] = ""
 
-            st.markdown("---")
-            st.markdown("#### 🛒 Chọn các mặt hàng để tạo PO")
-            
-            items_per_page = 20
-            total_pages = (len(df) + items_per_page - 1) // items_per_page if len(df) > 0 else 1
-            if st.session_state["current_page_purchasing"] >= total_pages:
-                st.session_state["current_page_purchasing"] = total_pages - 1
-            
-            start_idx = st.session_state["current_page_purchasing"] * items_per_page
-            end_idx = start_idx + items_per_page
-            df_page = df.iloc[start_idx:end_idx]
-            
-            header_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
-            header_cols[0].write("")
-            header_cols[1].markdown("**📦 Tên hàng**")
-            header_cols[2].markdown("**🏷️ Code**")
-            header_cols[3].markdown("**📂 Phân loại**")
-            header_cols[4].markdown("**📏 CBM**")
-            header_cols[5].markdown("**📦 Packing**")
-            header_cols[6].markdown("**💰 Giá**")
-            header_cols[7].markdown("**⚙️ Hành động**")
+        # --- SMART FILTERING TOP BAR ---
+        st.markdown("---")
+        with st.container():
+            filter_cols = st.columns([1.5, 2])
+            with filter_cols[0]:
+                search_q = st.text_input("🔍 Tìm kiếm (Tên / Code)", key="search_q")
+            with filter_cols[1]:
+                cats = categories_list()
+                selected_cats = st.multiselect("📂 Phân loại", options=cats, key="cat_q")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        with st.spinner("Đang tải danh sách..."):
+            filtered_df = df.copy()
+            if search_q:
+                q = search_q.lower()
+                filtered_df = filtered_df[
+                    filtered_df["Tên hàng"].astype(str).str.lower().str.contains(q) |
+                    filtered_df["Code"].astype(str).str.lower().str.contains(q)
+                ]
+            if selected_cats:
+                filtered_df = filtered_df[filtered_df["Phân loại"].isin(selected_cats)]
 
-            for _, row in df_page.iterrows():
-                row_cols = st.columns([0.5, 1.8, 1.2, 1.2, 1.2, 1.2, 1.4, 1.4])
-                selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
-                row_cols[1].write(row["Tên hàng"])
-                row_cols[2].write(row["Code"])
-                row_cols[3].write(row["Phân loại"])
-                row_cols[4].write(row["CBM"])
-                row_cols[5].write(row["Packing"])
-                row_cols[6].write(row["Giá"])
-                action_col = row_cols[7]
-                col1, col2 = action_col.columns(2)
-                if col1.button("✏️", key=f"edit_{row['Code']}"):
-                    st.session_state["edit_code"] = str(row["Code"])
-                    st.rerun()
-                if col2.button("🗑️", key=f"delete_{row['Code']}"):
-                    success, message = delete_product(str(row["Code"]))
-                    if success:
-                        st.success(message)
-                    else:
-                        st.error(message)
-                    st.rerun()
-                if selected:
-                    selected_rows.append(row)
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col1:
-                if st.button("⬅️ Trang trước", use_container_width=True, disabled=st.session_state["current_page_purchasing"] == 0):
-                    st.session_state["current_page_purchasing"] -= 1
-                    st.rerun()
-            with col2:
-                st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><b>Trang {st.session_state['current_page_purchasing'] + 1} / {total_pages}</b></div>", unsafe_allow_html=True)
-            with col3:
-                if st.button("Trang sau ➡️", use_container_width=True, disabled=st.session_state["current_page_purchasing"] >= total_pages - 1):
-                    st.session_state["current_page_purchasing"] += 1
-                    st.rerun()
-        else:
-            st.markdown("#### 💼 Danh sách hàng hóa dành cho Sale")
-            categories = categories_list()
-            cols = st.columns([1, 5])
-            with cols[0]:
-                st.markdown("**📂 Chọn category**")
-                selected_categories = []
-                for category in categories:
-                    if st.checkbox(category, key=f"category_checkbox_{category}"):
-                        selected_categories.append(category)
+            if filtered_df.empty:
+                st.info("ℹ️ Không có mặt hàng nào khớp với tìm kiếm của bạn.")
+            else:
+                items_per_page = 20
+                total_pages = (len(filtered_df) + items_per_page - 1) // items_per_page
+                
+                # Check pagination bounds
+                current_page_key = "current_page_purchasing" if is_purchasing else "current_page_sale"
+                if st.session_state[current_page_key] >= total_pages:
+                    st.session_state[current_page_key] = max(0, total_pages - 1)
+                
+                start_idx = st.session_state[current_page_key] * items_per_page
+                end_idx = start_idx + items_per_page
+                df_page = filtered_df.iloc[start_idx:end_idx]
+                
+                # --- GRID LAYOUT ---
+                cols_per_row = 4
+                for i in range(0, len(df_page), cols_per_row):
+                    grid_cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(df_page):
+                            row = df_page.iloc[i + j]
+                            with grid_cols[j]:
+                                with st.container(border=True):
+                                    img_src = get_image_html(row["Ảnh"])
+                                    st.markdown(f'''
+                                    <div style="text-align: center;">
+                                        <img src="{img_src}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-bottom: 10px;">
+                                    </div>
+                                    <div style="padding: 5px;">
+                                        <h4 style="margin: 0; color: #1E293B; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{row['Tên hàng']}">{row['Tên hàng']}</h4>
+                                        <p style="margin: 5px 0 0 0; color: #64748B; font-size: 0.9rem;">🏷️ <b>Code:</b> {row['Code']}</p>
+                                        <p style="margin: 2px 0 0 0; color: #64748B; font-size: 0.9rem;">📂 {row['Phân loại']}</p>
+                                        <p style="margin: 5px 0 10px 0; color: #4F46E5; font-weight: 700; font-size: 1.1rem;">💰 {row['Giá']}</p>
+                                    </div>
+                                    ''', unsafe_allow_html=True)
+                                    
+                                    selected = st.checkbox("✅ Chọn", key=f"select_{row['Code']}")
+                                    if selected:
+                                        selected_rows.append(row)
+                                        
+                                    if is_purchasing:
+                                        action_cols = st.columns(2)
+                                        if action_cols[0].button("✏️", key=f"edit_{row['Code']}", use_container_width=True):
+                                            st.session_state["edit_code"] = str(row["Code"])
+                                            st.rerun()
+                                        if action_cols[1].button("🗑️", key=f"delete_{row['Code']}", use_container_width=True):
+                                            success, message = delete_product(str(row["Code"]))
+                                            if success:
+                                                st.success(message)
+                                            else:
+                                                st.error(message)
+                                            st.rerun()
 
-            filtered_df = df[df["Phân loại"].isin(selected_categories)] if selected_categories else pd.DataFrame()
-            with cols[1]:
-                if not selected_categories:
-                    st.info("ℹ️ Vui lòng chọn ít nhất một category bên trái để xem sản phẩm.")
-                elif filtered_df.empty:
-                    st.warning("⚠️ Chưa có sản phẩm trong category đã chọn.")
-                else:
-                    items_per_page = 20
-                    total_pages = (len(filtered_df) + items_per_page - 1) // items_per_page if len(filtered_df) > 0 else 1
-                    if st.session_state["current_page_sale"] >= total_pages:
-                        st.session_state["current_page_sale"] = total_pages - 1
-                    
-                    start_idx = st.session_state["current_page_sale"] * items_per_page
-                    end_idx = start_idx + items_per_page
-                    filtered_df_page = filtered_df.iloc[start_idx:end_idx]
-                    
-                    header_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
-                    header_cols[0].markdown("**Chọn**")
-                    header_cols[1].markdown("**Tên hàng**")
-                    header_cols[2].markdown("**Code**")
-                    header_cols[3].markdown("**Phân loại**")
-                    header_cols[4].markdown("**CBM**")
-                    header_cols[5].markdown("**Packing**")
-                    header_cols[6].markdown("**Giá**")
+                # Pagination UI
+                st.markdown("<br>", unsafe_allow_html=True)
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col1:
+                    if st.button("⬅️ Trang trước", use_container_width=True, disabled=st.session_state[current_page_key] == 0):
+                        st.session_state[current_page_key] -= 1
+                        st.rerun()
+                with col2:
+                    st.markdown(f"<div style='text-align: center; padding: 0.5rem; background: #EEF2FF; border-radius: 8px; color: #4F46E5; font-weight: 600;'>Trang {st.session_state[current_page_key] + 1} / {total_pages}</div>", unsafe_allow_html=True)
+                with col3:
+                    if st.button("Trang sau ➡️", use_container_width=True, disabled=st.session_state[current_page_key] >= total_pages - 1):
+                        st.session_state[current_page_key] += 1
+                        st.rerun()
 
-                    for _, row in filtered_df_page.iterrows():
-                        row_cols = st.columns([0.5, 2.5, 1, 1, 1, 1, 1])
-                        selected = row_cols[0].checkbox("", key=f"select_{row['Code']}")
-                        if selected:
-                            selected_rows.append(row)
-                        row_cols[1].write(row["Tên hàng"])
-                        row_cols[2].write(row["Code"])
-                        row_cols[3].write(row["Phân loại"])
-                        row_cols[4].write(row["CBM"])
-                        row_cols[5].write(row["Packing"])
-                        row_cols[6].write(row["Giá"])
-                    
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col1:
-                        if st.button("⬅️ Trang trước", use_container_width=True, disabled=st.session_state["current_page_sale"] == 0, key="prev_sale"):
-                            st.session_state["current_page_sale"] -= 1
-                            st.rerun()
-                    with col2:
-                        st.markdown(f"<div style='text-align: center; padding: 0.5rem;'><b>Trang {st.session_state['current_page_sale'] + 1} / {total_pages}</b></div>", unsafe_allow_html=True)
-                    with col3:
-                        if st.button("Trang sau ➡️", use_container_width=True, disabled=st.session_state["current_page_sale"] >= total_pages - 1, key="next_sale"):
-                            st.session_state["current_page_sale"] += 1
-                            st.rerun()
-
+        # Excel Export Bottom
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("📊 Xuất Excel", use_container_width=True):
+            if st.button("📊 Xuất Excel PO", use_container_width=True):
                 if not selected_rows:
                     st.warning("⚠️ Vui lòng chọn ít nhất một mặt hàng trước khi xuất Excel.")
                 else:
